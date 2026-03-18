@@ -69,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             
             // UYGULAMA İSMİ
             const Text(
-              "Lezzet Keşfi",
+              "Lezzet Pusulası",
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
@@ -82,7 +82,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             
             // ALT BAŞLIK
             const Text(
-              "Yapay Zeka Mutfak Asistanın",
+              "Yeni lezzetleri keşfedin",
               style: TextStyle(fontSize: 16, color: Colors.grey, fontStyle: FontStyle.italic),
             ),
           ],
