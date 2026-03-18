@@ -3,132 +3,170 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  // TARİF SİLME FONKSİYONU
-  void _deleteRecipe(BuildContext context, String docId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: const Text("Tarifi Sil"),
-        content: const Text("Bu tarifi tamamen silmek istediğine emin misin? Geri dönüşü yoktur."),
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final currentUser = FirebaseAuth.instance.currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFDF7F0),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text("Şef Profili", style: TextStyle(color: Color(0xFFE2725B), fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Color(0xFFE2725B)),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
             onPressed: () async {
-              await FirebaseFirestore.instance.collection('tarifler').doc(docId).delete();
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tarif başarıyla silindi. 🗑️")));
+              await FirebaseAuth.instance.signOut();
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
               }
             },
-            child: const Text("Sil", style: TextStyle(color: Colors.white)),
+          )
+        ],
+      ),
+      body: Column(
+        children: [
+          // 1. ÜST PROFİL BİLGİSİ
+          _buildProfileHeader(),
+          
+          const SizedBox(height: 20),
+
+          // 2. SEKMELER (TABS)
+          TabBar(
+            controller: _tabController,
+            labelColor: const Color(0xFFE2725B),
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: const Color(0xFFE2725B),
+            tabs: const [
+              Tab(icon: Icon(Icons.restaurant_menu), text: "Tariflerim"),
+              Tab(icon: Icon(Icons.camera_alt), text: "Denediklerim"),
+            ],
+          ),
+
+          // 3. SEKME İÇERİKLERİ
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildMyRecipes(),
+                _buildMyTries(),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFFDF7F0),
-      appBar: AppBar(
-        title: const Text("Profilim", style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        actions: [
-          // ÇIKIŞ YAP BUTONU ARTIK BURADA!
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              // Çıkış yapınca ana sayfadaki her şeyi sıfırlayıp giriş ekranına atıyoruz
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
-            }
-          )
-        ],
-      ),
-      body: Column(
+  Widget _buildProfileHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      color: Colors.white,
+      child: Column(
         children: [
-          const SizedBox(height: 30),
-          // KULLANICI AVATARI VE BİLGİLERİ
           CircleAvatar(
-            radius: 45,
-            backgroundColor: Colors.orange.shade100,
+            radius: 50,
+            backgroundColor: const Color(0xFFE2725B).withOpacity(0.1),
             child: Text(
-              user?.displayName?.isNotEmpty == true ? user!.displayName![0].toUpperCase() : (user?.email?[0].toUpperCase() ?? "A"),
-              style: const TextStyle(fontSize: 40, color: Colors.orange, fontWeight: FontWeight.bold),
+              currentUser?.displayName?[0].toUpperCase() ?? "L",
+              style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Color(0xFFE2725B)),
             ),
           ),
           const SizedBox(height: 15),
-          Text(user?.displayName ?? "Lezzet Şefi", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text(user?.email ?? "", style: const TextStyle(color: Colors.grey)),
-          const SizedBox(height: 30),
-          
-          // LİSTE BAŞLIĞI
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            color: Colors.orange.shade50,
-            child: const Text("🍳 Paylaştığım Tarifler", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
+          Text(
+            currentUser?.displayName ?? "Lezzet Şefi",
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
-
-          // KULLANICININ KENDİ TARİFLERİ
-          Expanded(
-            child: StreamBuilder(
-              // SADECE BENİM ID'ME SAHİP OLAN TARİFLERİ GETİR
-              stream: FirebaseFirestore.instance.collection('tarifler').where('paylasan_uid', isEqualTo: user?.uid).snapshots(),
-              builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.orange));
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("Henüz hiç tarif paylaşmadın.\nHadi sihirbazı kullan! ✨", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)));
-                }
-
-                // Veritabanında index hatası almamak için sıralamayı telefonun içinde (lokalde) yapıyoruz
-                var docs = snapshot.data!.docs;
-                docs.sort((a, b) {
-                  Timestamp? tA = (a.data() as Map)['tarih'];
-                  Timestamp? tB = (b.data() as Map)['tarih'];
-                  if (tA == null || tB == null) return 0;
-                  return tB.compareTo(tA);
-                });
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(15),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    var ds = docs[index];
-                    var data = ds.data() as Map<String, dynamic>;
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 15),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(10),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(data['resim_url'] ?? '', width: 60, height: 60, fit: BoxFit.cover,
-                            errorBuilder: (ctx, err, stack) => Container(width: 60, height: 60, color: Colors.grey[300], child: const Icon(Icons.fastfood, color: Colors.grey)),
-                          ),
-                        ),
-                        title: Text(data['baslik'] ?? "İsimsiz Tarif", style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text("❤️ ${data['begenenler']?.length ?? 0} Beğeni   💬 ${data['yorum_sayisi'] ?? 0} Yorum"),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _deleteRecipe(context, ds.id), // Silme butonuna basınca fonksiyon çalışır
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+          Text(
+            currentUser?.email ?? "",
+            style: const TextStyle(color: Colors.grey),
           ),
+          const SizedBox(height: 20),
+          // İSTATİSTİKLER
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatItem("Tarif", "12"), // Burası ilerde dinamik olacak
+              _buildStatItem("Takipçi", "450"),
+              _buildStatItem("Puan", "4.8"),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFE2725B))),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      ],
+    );
+  }
+
+  Widget _buildMyRecipes() {
+    return StreamBuilder(
+      stream: FirebaseFirestore.instance
+          .collection('tarifler')
+          .where('paylasan_id', isEqualTo: currentUser?.uid) // Kendi paylaştıklarını getir
+          .snapshots(),
+      builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text("Henüz bir tarif paylaşmadın. 🍳"));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(10),
+          itemCount: snapshot.data!.docs.length,
+          itemBuilder: (context, index) {
+            var data = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            return Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              child: ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(data['resim_url'] ?? '', width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.fastfood)),
+                ),
+                title: Text(data['baslik'] ?? 'İsimsiz'),
+                subtitle: const Text("Yayında ✨"),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMyTries() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.photo_library_outlined, size: 60, color: Colors.grey),
+          SizedBox(height: 10),
+          Text("Denediğin tariflerin fotoğrafları burada görünecek!", style: TextStyle(color: Colors.grey)),
         ],
       ),
     );

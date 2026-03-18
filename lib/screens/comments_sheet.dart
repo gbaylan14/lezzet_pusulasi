@@ -3,8 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class CommentsSheet extends StatefulWidget {
-  final String recipeId; // Hangi tarife yorum yapıldığını bilmemiz lazım
-
+  final String recipeId;
   const CommentsSheet({super.key, required this.recipeId});
 
   @override
@@ -13,59 +12,54 @@ class CommentsSheet extends StatefulWidget {
 
 class _CommentsSheetState extends State<CommentsSheet> {
   final TextEditingController _commentController = TextEditingController();
-  bool _isSending = false;
+  final currentUser = FirebaseAuth.instance.currentUser;
 
-  // YORUM GÖNDERME FONKSİYONU
   Future<void> _sendComment() async {
-    final mesaj = _commentController.text.trim();
-    if (mesaj.isEmpty) return;
+    if (_commentController.text.trim().isEmpty) return;
 
-    setState(() => _isSending = true);
+    final commentText = _commentController.text.trim();
+    _commentController.clear();
 
-    final user = FirebaseAuth.instance.currentUser;
-    final docRef = FirebaseFirestore.instance.collection('tarifler').doc(widget.recipeId);
+    // 1. Yorumu ekle
+    await FirebaseFirestore.instance
+        .collection('tarifler')
+        .doc(widget.recipeId)
+        .collection('yorumlar')
+        .add({
+      'yazan_ad': currentUser?.displayName ?? "Anonim Gurme",
+      'yazan_id': currentUser?.uid,
+      'yorum': commentText,
+      'tarih': FieldValue.serverTimestamp(),
+    });
 
-    try {
-      // 1. Yorumu alt koleksiyona (subcollection) kaydet
-      await docRef.collection('yorumlar').add({
-        'mesaj': mesaj,
-        'yazan_ad': user?.displayName ?? user?.email?.split('@')[0] ?? 'Anonim Şef',
-        'user_id': user?.uid,
-        'tarih': FieldValue.serverTimestamp(),
-      });
-
-      // 2. Ana tarifteki yorum sayacını 1 artır
-      await docRef.set({'yorum_sayisi': FieldValue.increment(1)}, SetOptions(merge: true));
-
-      _commentController.clear();
-    } catch (e) {
-      print("Yorum Hatası: $e");
-    } finally {
-      setState(() => _isSending = false);
-    }
+    // 2. Ana tarif dökümanındaki yorum sayısını 1 artır
+    await FirebaseFirestore.instance
+        .collection('tarifler')
+        .doc(widget.recipeId)
+        .update({'yorum_sayisi': FieldValue.increment(1)});
   }
 
   @override
   Widget build(BuildContext context) {
-    // Klavyenin ekranı kapatmaması için ekran yüksekliğinin %75'ini kaplıyoruz
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFFFDF7F0),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
       child: Column(
         children: [
-          // ÜST TUTMACA VE BAŞLIK
-          const SizedBox(height: 10),
-          Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+          // TUTAMAC (Handle)
+          const SizedBox(height: 12),
+          Container(height: 5, width: 40, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+          
           const Padding(
-            padding: EdgeInsets.all(15.0),
-            child: Text("Yorumlar", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            padding: EdgeInsets.all(20.0),
+            child: Text("Yorumlar & Lezzet Fikirleri 💭", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFE2725B))),
           ),
-          const Divider(height: 1),
+          const Divider(height: 0),
 
-          // YORUMLARIN LİSTELENDİĞİ ALAN
+          // YORUM LİSTESİ
           Expanded(
             child: StreamBuilder(
               stream: FirebaseFirestore.instance
@@ -75,84 +69,105 @@ class _CommentsSheetState extends State<CommentsSheet> {
                   .orderBy('tarih', descending: true)
                   .snapshots(),
               builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text("İlk yorumu sen yap! 💬", style: TextStyle(color: Colors.grey)));
-                }
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
+                if (snapshot.data!.docs.isEmpty) return _buildEmptyComments();
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                  padding: const EdgeInsets.all(15),
                   itemCount: snapshot.data!.docs.length,
                   itemBuilder: (context, index) {
-                    var yorum = snapshot.data!.docs[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 15),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.orange.shade100,
-                            child: Text(yorum['yazan_ad'][0].toUpperCase(), style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(15)),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(yorum['yazan_ad'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  const SizedBox(height: 4),
-                                  Text(yorum['mesaj'], style: const TextStyle(fontSize: 14)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
+                    var data = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+                    return _buildCommentBubble(data);
                   },
                 );
               },
             ),
           ),
 
-          // YORUM YAZMA KUTUSU
-          Container(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 10, // Klavye açılınca yukarı kayması için
-              left: 15, right: 15, top: 10
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: "Harika görünüyor...",
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                CircleAvatar(
-                  backgroundColor: const Color(0xFFE2725B),
-                  child: IconButton(
-                    icon: _isSending ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.send, color: Colors.white, size: 20),
-                    onPressed: _isSending ? null : _sendComment,
-                  ),
-                )
-              ],
+          // YORUM YAZMA ALANI
+          _buildCommentInput(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentBubble(Map<String, dynamic> data) {
+    String ilkHarf = data['yazan_ad'] != null ? data['yazan_ad'][0].toUpperCase() : "G";
+    return Padding(
+     
+    padding: const EdgeInsets.only(bottom: 15), // Doğru kullanım bu      child: Row(
+
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: const Color(0xFFE2725B).withOpacity(0.1),
+            child: Text(ilkHarf, style: const TextStyle(color: Color(0xFFE2725B), fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5)],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data['yazan_ad'] ?? "Anonim", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text(data['yorum'] ?? "", style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                ],
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentInput() {
+    return Container(
+      padding: EdgeInsets.only(left: 15, right: 15, top: 10, bottom: MediaQuery.of(context).viewInsets.bottom + 15),
+      decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -2))]),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _commentController,
+              decoration: InputDecoration(
+                hintText: "Bir şeyler yaz...",
+                hintStyle: const TextStyle(color: Colors.grey),
+                filled: true,
+                fillColor: const Color(0xFFFDF7F0),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _sendComment,
+            child: const CircleAvatar(
+              backgroundColor: Color(0xFFE2725B),
+              child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyComments() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline_rounded, size: 60, color: Colors.grey),
+          SizedBox(height: 10),
+          Text("Henüz yorum yok.\nİlk tadına bakan sen ol! 🥣", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
         ],
       ),
     );
