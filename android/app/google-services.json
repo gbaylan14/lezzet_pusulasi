@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "212773337833",
+    "project_id": "lezzetpusulasi-e9525",
+    "storage_bucket": "lezzetpusulasi-e9525.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:212773337833:android:e2b8f2b091d3b926174e78",
+        "android_client_info": {
+          "package_name": "com.example.lezzet_pusulasi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "212773337833-j14fmu3gk2loqd4hb6ehktgkejpbdd50.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.lezzet_pusulasi",
+            "certificate_hash": "2b0737ae533984c44a9500426af1033fffaf1250"
+          }
+        },
+        {
+          "client_id": "212773337833-aolo5c34vshpj3evvdqea68pmbcq35m8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBoMIp6UwwddkwyxPP-ILxxFPu1dxSGWks"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "212773337833-aolo5c34vshpj3evvdqea68pmbcq35m8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "212773337833-5kmu0kh2aak01qpvnf5mrgmqap2pifvp.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.lezzetPusulasi"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
