@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'home_screen.dart';
 import 'verify_email_screen.dart';
 
@@ -19,21 +21,38 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _confirmPasswordController = TextEditingController();
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
-  
-  String _selectedGender = 'Kadın'; 
+
+  String _selectedGender = 'Kadın';
   bool _isLoading = false;
 
-  // --- GOOGLE İLE GİRİŞ FONKSİYONU ---
+  // --- HİBRİT GOOGLE GİRİŞ FONKSİYONU (google_sign_in 7.x uyumlu) ---
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-      googleProvider.addScope('email');
-      googleProvider.addScope('profile');
+      UserCredential userCredential;
 
-      UserCredential userCredential = 
-          await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      if (kIsWeb) {
+        // WEB İÇİN POPUP KULLANIMI
+        final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+        googleProvider.addScope('email');
+        googleProvider.addScope('profile');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      } else {
+        // ANDROID İÇİN - google_sign_in 7.x
+        // authenticate() metodu; signIn() artık yok!
+        final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
 
+        // authentication artık senkron (await yok)
+        final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+
+        final OAuthCredential credential = GoogleAuthProvider.credential(
+          idToken: googleAuth.idToken,
+        );
+
+        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      }
+
+      // --- Firestore Kayıt Kısmı ---
       final userDoc = await FirebaseFirestore.instance
           .collection('kullanicilar')
           .doc(userCredential.user!.uid)
@@ -52,12 +71,24 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
 
-      if (context.mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      }
+    } on GoogleSignInException catch (e) {
+      // 7.x: message değil description kullanılıyor!
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Google Giriş Hatası: ${e.code} - ${e.description}")),
+        );
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Google Giriş Hatası: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Google Giriş Hatası: $e")),
+        );
       }
     }
     setState(() => _isLoading = false);
@@ -66,7 +97,9 @@ class _LoginScreenState extends State<LoginScreen> {
   // --- NORMAL E-POSTA İLE GİRİŞ / KAYIT ---
   void _submit() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen e-posta ve şifre giriniz!")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Lütfen e-posta ve şifre giriniz!")),
+      );
       return;
     }
 
@@ -79,15 +112,20 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (userCredential.user != null && !userCredential.user!.emailVerified) {
-          if (context.mounted) {
-            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const VerifyEmailScreen()));
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const VerifyEmailScreen()),
+            );
           }
           setState(() => _isLoading = false);
           return;
         }
       } else {
         if (_passwordController.text != _confirmPasswordController.text) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Şifreler uyuşmuyor!")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Şifreler uyuşmuyor!")),
+          );
           setState(() => _isLoading = false);
           return;
         }
@@ -100,7 +138,10 @@ class _LoginScreenState extends State<LoginScreen> {
         if (userCredential.user != null) {
           await userCredential.user!.updateDisplayName(_fullNameController.text.trim());
 
-          await FirebaseFirestore.instance.collection('kullanicilar').doc(userCredential.user!.uid).set({
+          await FirebaseFirestore.instance
+              .collection('kullanicilar')
+              .doc(userCredential.user!.uid)
+              .set({
             'ad_soyad': _fullNameController.text.trim(),
             'kullanici_adi': _usernameController.text.trim(),
             'cinsiyet': _selectedGender,
@@ -109,21 +150,29 @@ class _LoginScreenState extends State<LoginScreen> {
           });
 
           await userCredential.user!.sendEmailVerification();
-          
-          if (context.mounted) {
-            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const VerifyEmailScreen()));
+
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const VerifyEmailScreen()),
+            );
           }
           setState(() => _isLoading = false);
           return;
         }
       }
 
-      if (context.mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: ${e.toString()}")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Hata: ${e.toString()}")),
+        );
       }
     }
     setState(() => _isLoading = false);
@@ -140,25 +189,16 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // --- EFSANEVİ LOGO BURADA ---
-              Center(
-                child: Image.asset(
-                  'assets/logo.png',
-                  height: 150, // İdeal boyut
-                  fit: BoxFit.contain,
-                ),
+              const Center(
+                child: Icon(Icons.explore_rounded, size: 100, color: Color(0xFFE2725B)),
               ),
               const SizedBox(height: 20),
-
-              // BAŞLIK
               Text(
                 _isLoginMode ? "Hoş Geldin! 👋" : "Aramıza Katıl! 🚀",
                 style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFE2725B)),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 30),
-
-              // GOOGLE BUTONU
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _signInWithGoogle,
                 icon: Image.network("https://cdn-icons-png.flaticon.com/512/2991/2991148.png", height: 24),
@@ -167,15 +207,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   backgroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 2,
                 ),
               ),
               const SizedBox(height: 10),
-              
-              // FACEBOOK BUTONU
               ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Facebook Girişi yakında eklenecek!")));
-                },
+                onPressed: null,
                 icon: const Icon(Icons.facebook, color: Colors.white, size: 28),
                 label: const Text("Facebook ile Giriş Yap", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
@@ -184,84 +221,31 @@ class _LoginScreenState extends State<LoginScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-              
               const SizedBox(height: 25),
               const Row(
                 children: [
                   Expanded(child: Divider(color: Colors.grey, thickness: 1)),
-                  Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("VEYA", style: TextStyle(color: Colors.grey))),
+                  Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("VEYA", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))),
                   Expanded(child: Divider(color: Colors.grey, thickness: 1)),
                 ],
               ),
               const SizedBox(height: 25),
-
               if (!_isLoginMode) ...[
-                TextField(
-                  controller: _fullNameController,
-                  decoration: InputDecoration(labelText: "Ad Soyad", prefixIcon: const Icon(Icons.badge, color: Colors.orange), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
-                ),
+                _buildTextField(_fullNameController, "Ad Soyad", Icons.badge),
                 const SizedBox(height: 15),
-                TextField(
-                  controller: _usernameController,
-                  decoration: InputDecoration(labelText: "Kullanıcı Adı", prefixIcon: const Icon(Icons.person, color: Colors.orange), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
-                ),
+                _buildTextField(_usernameController, "Kullanıcı Adı", Icons.person),
                 const SizedBox(height: 15),
-                
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
-                  child: Row(
-                    children: [
-                      const Text(" Cinsiyet:", style: TextStyle(color: Colors.grey, fontSize: 16)),
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text("Kadın"),
-                          value: 'Kadın',
-                          groupValue: _selectedGender,
-                          activeColor: Colors.orange,
-                          contentPadding: EdgeInsets.zero,
-                          onChanged: (value) => setState(() => _selectedGender = value!),
-                        ),
-                      ),
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text("Erkek"),
-                          value: 'Erkek',
-                          groupValue: _selectedGender,
-                          activeColor: Colors.orange,
-                          contentPadding: EdgeInsets.zero,
-                          onChanged: (value) => setState(() => _selectedGender = value!),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildGenderSelector(),
                 const SizedBox(height: 15),
               ],
-
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(labelText: "E-posta adresi", prefixIcon: const Icon(Icons.email, color: Colors.orange), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
-              ),
+              _buildTextField(_emailController, "E-posta adresi", Icons.email, keyboardType: TextInputType.emailAddress),
               const SizedBox(height: 15),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(labelText: "Şifre", prefixIcon: const Icon(Icons.lock, color: Colors.orange), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
-              ),
-              
+              _buildTextField(_passwordController, "Şifre", Icons.lock, obscureText: true),
               if (!_isLoginMode) ...[
                 const SizedBox(height: 15),
-                TextField(
-                  controller: _confirmPasswordController,
-                  obscureText: true,
-                  decoration: InputDecoration(labelText: "Şifrenizi Tekrar Giriniz", prefixIcon: const Icon(Icons.lock_outline, color: Colors.orange), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
-                ),
+                _buildTextField(_confirmPasswordController, "Şifre Tekrar", Icons.lock_outline, obscureText: true),
               ],
-
               const SizedBox(height: 25),
-
               if (!_isLoginMode)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 15),
@@ -271,31 +255,75 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),
-
               ElevatedButton(
                 onPressed: _isLoading ? null : _submit,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE2725B), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                child: _isLoading 
-                    ? const CircularProgressIndicator(color: Colors.white)
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE2725B),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                ),
+                child: _isLoading
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : Text(_isLoginMode ? "Giriş Yap" : "Kaydol", style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-              
               const SizedBox(height: 15),
-
               TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isLoginMode = !_isLoginMode;
-                  });
-                },
+                onPressed: () => setState(() => _isLoginMode = !_isLoginMode),
                 child: Text(
                   _isLoginMode ? "Hesabın yok mu? Kaydol" : "Zaten hesabın var mı? Giriş Yap",
                   style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-              )
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon, {bool obscureText = false, TextInputType? keyboardType}) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: Colors.orange),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  Widget _buildGenderSelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+      child: Row(
+        children: [
+          const Text(" Cinsiyet:", style: TextStyle(color: Colors.grey, fontSize: 16)),
+          Expanded(
+            child: RadioListTile<String>(
+              title: const Text("Kadın", style: TextStyle(fontSize: 14)),
+              value: 'Kadın',
+              groupValue: _selectedGender,
+              activeColor: Colors.orange,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (value) => setState(() => _selectedGender = value!),
+            ),
+          ),
+          Expanded(
+            child: RadioListTile<String>(
+              title: const Text("Erkek", style: TextStyle(fontSize: 14)),
+              value: 'Erkek',
+              groupValue: _selectedGender,
+              activeColor: Colors.orange,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (value) => setState(() => _selectedGender = value!),
+            ),
+          ),
+        ],
       ),
     );
   }

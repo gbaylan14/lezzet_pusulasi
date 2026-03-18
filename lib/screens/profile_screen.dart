@@ -146,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               child: ListTile(
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(data['resim_url'] ?? '', width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.fastfood)),
+                  child: Image.network(data['resim_url'] ?? '', width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_,_,_) => const Icon(Icons.fastfood)),
                 ),
                 title: Text(data['baslik'] ?? 'İsimsiz'),
                 subtitle: const Text("Yayında ✨"),
